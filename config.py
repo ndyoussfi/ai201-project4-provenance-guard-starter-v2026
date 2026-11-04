@@ -75,6 +75,12 @@ DISAGREEMENT_LIMIT = 0.3
 HUMAN_THRESHOLD = 0.40
 AI_THRESHOLD = 0.70
 
+# Input limits for POST /submit (criterion 5). Under MIN_WORDS the score is too
+# noisy to judge someone's writing fairly; over MAX_WORDS the request is slow and
+# GPT-2 only reads the first DETECTOR_MAX_TOKENS anyway.
+MIN_WORDS = 20
+MAX_WORDS = 5000
+
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
 # returning 0.5, the combined score can never leave 0.25–0.75 no matter what

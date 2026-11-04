@@ -153,6 +153,26 @@ def health():
 
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
+def check_submission(text, creator_id):
+    """
+    Return a plain-English reason the input can't be scored, or None if it's fine.
+
+    Runs before any signal, so bad input never reaches GPT-2 and never gets
+    logged as a decision about someone (criterion 5).
+    """
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return "Send a creator_id."
+    if not isinstance(text, str) or not text.strip():
+        return "Send some text to check."
+
+    word_count = len(text.split())
+    if word_count < config.MIN_WORDS:
+        return f"This is too short to check fairly. Send at least {config.MIN_WORDS} words."
+    if word_count > config.MAX_WORDS:
+        return f"This is too long to check. Send at most {config.MAX_WORDS} words."
+    return None
+
+
 @app.post("/submit")
 # @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
@@ -205,6 +225,13 @@ def submit():
     payload = request.get_json(silent=True) or {}
     text = payload.get("text")
     creator_id = payload.get("creator_id")
+
+    # Stop bad input before scoring. It's logged as a rejection, not a decision.
+    problem = check_submission(text, creator_id)
+    if problem:
+        audit.log_rejection(creator_id, problem)
+        return jsonify({"error": "bad_input", "message": problem}), 400
+
     content_id = str(uuid.uuid4())
 
     model_score = detector.model_signal(text)
