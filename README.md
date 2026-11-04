@@ -52,7 +52,7 @@ Adds: a second, independent piece of evidence: a score from 0 to 1 (style_score)
 Adds: one combined score from 0 to 1 (combined_score), so there's a single number to compare against the thresholds.
 
 
-6. scoring.py (score_to_label) turns the combined score into one of three labels (human, unsure, or likely AI) using two thresholds (0.35 and 0.65 in config.py).
+6. scoring.py (score_to_label) turns the combined score into one of three labels (human, unsure, or likely AI) using two thresholds (0.40 and 0.70 in config.py).
 Adds: the plain-English message a writer actually reads. It says how sure the system is in words, says what happens next, and doesn't accuse them.
 
 7. The decision is written to logs/audit.jsonl through audit.py, and the response goes back with the content_id, guess, confidence score, and label text.
@@ -60,7 +60,7 @@ Adds: a permanent record of the decision (both signal scores, the combined score
 
 ### When it gets it wrong
 
-Amina, a second-language writer, submits a short, plain poem she wrote herself. Because she uses simple words, GPT-2 finds it predictable, so I expect signal one to score it high (around 0.75). Because her lines are even with little punctuation, I expect signal two to score it high too (around 0.75). Both signals share the same blind spot, so the combined score would be about 0.75, above the 0.65 AI threshold, and she gets the "likely AI" label.
+Amina, a second-language writer, submits a short, plain poem she wrote herself. Because she uses simple words, GPT-2 finds it predictable, so I expect signal one to score it high (around 0.75). Because her lines are even with little punctuation, I expect signal two to score it high too (around 0.75). Both signals share the same blind spot, so the combined score would be about 0.75, above the 0.70 AI threshold, and she gets the "likely AI" label.
 
 She reads that on a poem she wrote, and feels accused. If the label doesn't say why or what to do next, she may not know she can push back.
 
@@ -125,7 +125,7 @@ My four test inputs, sent through POST /submit:
 | Input | Model | Style | Combined |
 |---|---|---|---|
 | Clearly AI (exercise paragraph) | 0.9188 | 0.6338 | 0.7763 |
-| Formal human (my prayer paragraph) | 0.8034 | 0.4791 | 0.64 (capped) |
+| Formal human (my prayer paragraph) | 0.8034 | 0.4791 | 0.6412 |
 | Lightly-edited AI (exercise, my edits) | 0.4972 | 0.5358 | 0.5165 |
 | Clearly human (my casual message) | 0.342 | 0.3626 | 0.3523 |
 
@@ -135,7 +135,7 @@ My four test inputs, sent through POST /submit:
      somewhere else, say where. -->
 
 **A case where my two signals split, and what my rule does with it:**
-My prayer paragraph: model 0.8034, style 0.4791, a difference of 0.32. The rule capped it at 0.64, so it gets "unsure" instead of "likely AI". To be honest, the plain average was 0.641, already just under 0.65, so here the rule made sure rather than changing the label.
+My prayer paragraph: model 0.8034, style 0.4791, a difference of 0.32, which is over my 0.3 limit. Signal one says AI-like and signal two says human-like. The rule caps the score just below the AI threshold (at 0.69), so this text can never get "likely AI" while the signals disagree this much. Its plain average is 0.6412, already below the cap, so it lands in "unsure" either way. When I was still using a 0.65 AI threshold, the cap was 0.64 and it moved the score slightly (0.641 to 0.64), but not the label. The rule matters most for a case like model 0.98 and style 0.45: the plain average is 0.715, which would be "likely AI", but the signals differ by 0.53, so the cap brings it down to 0.69 and it lands in "unsure" instead of an accusation.
 
 
 
@@ -150,14 +150,20 @@ My prayer paragraph: model 0.8034, style 0.4791, a difference of 0.32. The rule 
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.00 to 0.40 | Our automated check thinks this was probably written by a person. Automated checks aren't perfect, but we didn't find signs of AI help. Nothing changes: your post stays up as normal. No action is needed. |
+| unsure | 0.40 to 0.70 | Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it. |
+| high-confidence AI | 0.70 to 1.00 | Our automated check found patterns that often appear in AI-assisted writing. Automated checks can be wrong, especially on clear or simple writing. This is an estimate, not proof. Your post stays up, with a note that it may be AI-assisted. If you wrote this yourself, tell us about your writing and a person will review it. |
+
+A score of exactly 0.40 counts as human, and exactly 0.70 counts as likely AI (`scoring.py::score_to_label`). The thresholds are `HUMAN_THRESHOLD` and `AI_THRESHOLD` in config.py.
+
+**Why I moved the thresholds from 0.35 / 0.65 to 0.40 / 0.70:** At 0.65, a shortened version of my own Morocco travel message scored 0.6683 and would have been labeled "likely AI". At 0.35, my casual message to a friend scored 0.3523 and could not reach "human", even with typos and "!!!!". At 0.40 / 0.70, every one of my test texts lands where it should, and my clearly-AI example (0.7763) still gets caught. The trade-off is that some AI text scoring between 0.65 and 0.70 now gets "unsure" instead of "likely AI". I accept more misses so that fewer real writers get accused.
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
      sounding like an accusation, because the person reading it may well have
      written every word themselves. -->
+
+It says the check couldn't tell, instead of giving a number, so the reader doesn't have to guess what 0.55 means. It says the post stays up, because the first worry is whether anything happened to their work. It says "this isn't a judgment about you", because my own writing landed in "unsure" during testing, and someone like Amina may have written every word. It ends with a way to reach a person, so the writer is never stuck with a machine's guess.
 
 
 
@@ -175,20 +181,22 @@ My prayer paragraph: model 0.8034, style 0.4791, a difference of 0.32. The rule 
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
+My own prayer paragraph, written by me:
+
 ```bash
-curl -X POST http://127.0.0.1:5000/submit \
+$ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "I am going to Morocco in March for a week to attend my nephews wedding. I am flying out from San Francisco to Rabat on March 23rd and will have two layovers, one in Boston and the other in Paris.", "creator_id": "u1"}'
+  -d '{"text": "Prayer is one of the 5 pillars of Islam. It is an obligatory ritual that every muslim is supposed to perform 5 times a day. Each of these 5 times has a specific time for prayer every single day, including dawn, noon, mid afternoon, sunset, and after dark.", "creator_id": "u1"}'
 ```
 
 ```json
 {
-  "confidence": 0.73,
-  "content_id": "4ca9adba-5db1-4335-b169-5f72667d7701",
-  "guess": "ai",
-  "label": "likely_ai",
-  "model_score": 0.7337,
-  "style_score": 0.65
+  "confidence": 0.6412,
+  "content_id": "5be9f0a1-8633-436d-9c75-5a252734a81d",
+  "guess": "unsure",
+  "label": "Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it.",
+  "model_score": 0.8034,
+  "style_score": 0.4791
 }
 ```
 
@@ -197,14 +205,35 @@ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+  -d '{"content_id": "5be9f0a1-8633-436d-9c75-5a252734a81d", "reasoning": "I wrote this myself. It is plain because I was explaining a basic fact about my religion."}'
 ```
 
 ```json
+{
+  "content_id": "5be9f0a1-8633-436d-9c75-5a252734a81d",
+  "message": "Thanks. Your appeal was received and a person will review it.",
+  "status": "under_review"
+}
+```
 
+An appeal with a content_id that doesn't exist:
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/appeal \
+  -H "Content-Type: application/json" \
+  -d '{"content_id": "not-a-real-id", "reasoning": "test"}'
+```
+
+```json
+{
+  "error": "not_found",
+  "message": "No submission with that content_id."
+}
 ```
 
 **What the log shows afterwards**
+
+The original decision stays in the log unchanged, and the appeal is added right after it with the same content_id.
 
 ```bash
 $ curl "http://127.0.0.1:5000/log?limit=3"
@@ -212,18 +241,37 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 ```json
 {
-  "count": 1,
+  "count": 3,
   "entries": [
     {
-      "combined_score": null,
-      "content_id": "4ca9adba-5db1-4335-b169-5f72667d7701",
+      "combined_score": 0.3523,
+      "content_id": "53f30962-8041-45a9-bb98-d0eeaefc208c",
       "creator_id": "u1",
-      "guess": "ai",
-      "label": null,
-      "model_score": 0.7337,
+      "guess": "human",
+      "label": "Our automated check thinks this was probably written by a person. Automated checks aren't perfect, but we didn't find signs of AI help. Nothing changes: your post stays up as normal. No action is needed.",
+      "model_score": 0.342,
       "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-04T03:37:53+00:00"
+      "style_score": 0.3626,
+      "timestamp": "2026-11-04T06:35:16+00:00"
+    },
+    {
+      "combined_score": 0.6412,
+      "content_id": "5be9f0a1-8633-436d-9c75-5a252734a81d",
+      "creator_id": "u1",
+      "guess": "unsure",
+      "label": "Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it.",
+      "model_score": 0.8034,
+      "status": "decided",
+      "style_score": 0.4791,
+      "timestamp": "2026-11-04T06:39:30+00:00"
+    },
+    {
+      "content_id": "5be9f0a1-8633-436d-9c75-5a252734a81d",
+      "creator_id": "u1",
+      "event": "appeal",
+      "reasoning": "I wrote this myself. It is plain because I was explaining a basic fact about my religion.",
+      "status": "under_review",
+      "timestamp": "2026-11-04T06:40:22+00:00"
     }
   ]
 }
