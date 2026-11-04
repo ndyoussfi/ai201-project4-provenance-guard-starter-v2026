@@ -36,9 +36,53 @@
 
 ## What This Does
 
-<!-- The path a submission takes, from arriving to the label a reader sees.
-     Six or seven steps — this is the trace you wrote in Milestone 1. -->
+1. A writing site sends a JSON request to POST /submit with two fields: text (the poem) and creator_id (who submitted it).
+Adds: the input: the writing to judge, and who it belongs to, so the decision can be logged against that person and they can appeal it later.
 
+2. The route checks that text and creator_id are present, and that the text isn't empty, too long, or extremely short.
+Adds: a gate. If the input is bad, the route stops and sends back an error message, so bad input never reaches the signals and never gets saved in the log as a decision about someone.
+
+3. Signal one (detector.py): GPT-2 reads the text word by word and measures how surprising it is (perplexity).
+Adds: the first piece of evidence: the perplexity converted to a score from 0 to 1 (model_score). Low perplexity means a higher score, which is more AI-like.
+
+4. Signal two (stylometry.py) measures the text's style without reading its meaning: how much sentence lengths vary, how varied the vocabulary is, and how much punctuation it uses.
+Adds: a second, independent piece of evidence: a score from 0 to 1 (style_score). Even, uniform writing scores higher, which is more AI-like.
+
+5. scoring.py (combine_signals) combines the two signals with a weighted average. Right now they count equally (0.5 each, set in config.py).
+Adds: one combined score from 0 to 1 (combined_score), so there's a single number to compare against the thresholds.
+
+
+6. scoring.py (score_to_label) turns the combined score into one of three labels (human, unsure, or likely AI) using two thresholds (0.35 and 0.65 in config.py).
+Adds: the plain-English message a writer actually reads. It says how sure the system is in words, says what happens next, and doesn't accuse them.
+
+7. The decision is written to logs/audit.jsonl through audit.py, and the response goes back with the content_id, guess, confidence score, and label text.
+Adds: a permanent record of the decision (both signal scores, the combined score, the label, and status "decided"), so a reviewer can later see what was decided and why, and the content_id, which the writer needs to appeal the decision.
+
+### When it gets it wrong
+
+Mina, a second-language writer, submits a short, plain poem she wrote herself. Because she uses simple words, GPT-2 finds it predictable, so I expect signal one to score it high (around 0.75). Because her lines are even with little punctuation, I expect signal two to score it high too (around 0.75). Both signals share the same blind spot, so the combined score would be about 0.75, above the 0.65 AI threshold, and she gets the "likely AI" label.
+
+She reads that on a poem she wrote, and feels accused. If the label doesn't say why or what to do next, she may not know she can push back.
+
+What she can do: send POST /appeal with the content_id from her /submit response and her reasoning. The appeal is logged next to the original decision, and the status moves from "decided" to "under_review".
+
+### The two endpoints
+
+```
+POST /submit
+  In:    text (the writing), creator_id (who submitted it)
+  Out:   content_id, guess, confidence, label
+  Error: missing/empty/too short/too long text, or missing creator_id
+         → 400 with an error message (not scored, not logged as a decision)
+
+POST /appeal
+  In:    content_id, reasoning (the writer's explanation)
+  Out:   content_id, status ("under_review"), a short confirmation message
+  Note:  creator_id is looked up from the original log entry
+         (audit.entries_for), so the writer doesn't resend it.
+  Error: unknown content_id → 404 with an error message
+         missing content_id or reasoning → 400
+```
 
 
 ---
@@ -53,19 +97,19 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** GPT-2 reads the text word by word and measures how surprising it is (perplexity). `detector.py` converts that to a score from 0 to 1 (model_score). Low perplexity means a higher score, which is more AI-like.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** AI tends to pick the most likely next word, so its text surprises GPT-2 less.
 
-**What it can't see:**
+**What it can't see:** It can't tell plain, predictable human writing from AI writing. Famous or quoted text, and simple writing from second-language or younger writers, look predictable, so they score AI-like even when a human wrote them. And AI text that uses rare words can score human-like.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** the text's style without reading its meaning: how much sentence lengths vary, how varied the vocabulary is, and how much punctuation it uses. It becomes a score from 0 to 1 (style_score). Even, uniform writing scores higher, which is more AI-like.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** Humans tend to write unevenly: short and long sentences, more varied punctuation. AI is more even.
 
-**What it can't see:**
+**What it can't see:** It never reads meaning, only shape. Human writing that is naturally even (recipes, rhythmic poems, careful formal writing) scores AI-like, and AI text can be edited to look human just by changing sentence lengths and adding punctuation.
 
 ### The combining rule
 

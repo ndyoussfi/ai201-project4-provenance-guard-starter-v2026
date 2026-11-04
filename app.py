@@ -202,14 +202,26 @@ def submit():
     payload = request.get_json(silent=True) or {}
 
     # TODO: delete this and build the route.
+    # return jsonify({
+    #     "error": "not_implemented",
+    #     "message": "POST /submit isn't built yet — see the TODO in app.py.",
+    #     "you_sent": {
+    #         "text_length": len(payload.get("text", "")),
+    #         "creator_id": payload.get("creator_id"),
+    #     },
+    # }), 501
+    content_id = str(uuid.uuid4())
+
+    # hard coded
+    # use the other python files and logic for this
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "guess": "ai",
+        "confidence": 0.73,
+        "label": "likely_ai",
+        "model_score": 0.81, 
+        "style_score": 0.65,
+    })
 
 
 @app.post("/appeal")
