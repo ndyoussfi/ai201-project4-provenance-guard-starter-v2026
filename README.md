@@ -60,7 +60,7 @@ Adds: a permanent record of the decision (both signal scores, the combined score
 
 ### When it gets it wrong
 
-Mina, a second-language writer, submits a short, plain poem she wrote herself. Because she uses simple words, GPT-2 finds it predictable, so I expect signal one to score it high (around 0.75). Because her lines are even with little punctuation, I expect signal two to score it high too (around 0.75). Both signals share the same blind spot, so the combined score would be about 0.75, above the 0.65 AI threshold, and she gets the "likely AI" label.
+Amina, a second-language writer, submits a short, plain poem she wrote herself. Because she uses simple words, GPT-2 finds it predictable, so I expect signal one to score it high (around 0.75). Because her lines are even with little punctuation, I expect signal two to score it high too (around 0.75). Both signals share the same blind spot, so the combined score would be about 0.75, above the 0.65 AI threshold, and she gets the "likely AI" label.
 
 She reads that on a poem she wrote, and feels accused. If the label doesn't say why or what to do next, she may not know she can push back.
 
