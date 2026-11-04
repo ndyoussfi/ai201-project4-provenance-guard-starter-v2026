@@ -166,13 +166,20 @@ POST /appeal
      diagnostics. -->
 
 ```bash
-$ curl -X POST http://127.0.0.1:5000/submit \
+curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "I am going to Morocco in March for a week to attend my nephews wedding. I am flying out from San Francisco to Rabat on March 23rd and will have two layovers, one in Boston and the other in Paris.", "creator_id": "u1"}'
 ```
 
 ```json
-
+{
+  "confidence": 0.73,
+  "content_id": "4ca9adba-5db1-4335-b169-5f72667d7701",
+  "guess": "ai",
+  "label": "likely_ai",
+  "model_score": 0.7337,
+  "style_score": 0.65
+}
 ```
 
 **An appeal**
@@ -194,7 +201,22 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 ```
 
 ```json
-
+{
+  "count": 1,
+  "entries": [
+    {
+      "combined_score": null,
+      "content_id": "4ca9adba-5db1-4335-b169-5f72667d7701",
+      "creator_id": "u1",
+      "guess": "ai",
+      "label": null,
+      "model_score": 0.7337,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-04T03:37:53+00:00"
+    }
+  ]
+}
 ```
 
 ---
