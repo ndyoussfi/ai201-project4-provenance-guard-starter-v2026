@@ -281,17 +281,17 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 ## How I Used AI
 
-**Moment 1**
+**Moment 1: weighting the style signal**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I had built the three style measures (sentence-length spread, type-token ratio, punctuation density) and was stuck on how to combine them into one score.
+- *What came back:* A suggestion to weight them 0.6 spread, 0.2 type-token ratio, 0.2 punctuation, because on my test texts spread was the only measure that separated AI from human in the expected direction. The other two pointed the wrong way: the AI paragraph had more varied vocabulary and more commas than my human text.
+- *What I changed:* I kept the weights, because when I ran them the clearly-AI paragraph scored 0.63 on style and my human text scored 0.18. Using the code was not smooth. I first pasted the spread code into the wrong function (`punctuation_density`), and the test output showed the spread number on the punctuation line, so I moved it. Then in `/submit` I called `sentence_length_spread` instead of `style_signal`. That measure runs backwards (higher means more human) and isn't on a 0 to 1 scale, so it would have pushed human writing toward AI. I switched it to `style_signal`.
 
-**Moment 2**
+**Moment 2: moving the thresholds**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Whether to keep the starter thresholds of 0.35 / 0.65 or change them before writing my labels.
+- *What came back:* A suggestion to move them to 0.40 / 0.70, with a table showing where each of my test texts would land under both settings.
+- *What I changed:* I moved them because of two results from my own writing. A shortened version of my Morocco travel message scored 0.6683, so at 0.65 it would have been labeled "likely AI". My casual message to a friend scored 0.3523, so at 0.35 it couldn't reach "human", even with typos. To check the change, I ran `label_ranges()` to make sure there were no gaps, and I curled three texts that came back ai, unsure and human. I also wrote down the trade-off: some AI text between 0.65 and 0.70 now gets "unsure" instead of "likely AI".
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
