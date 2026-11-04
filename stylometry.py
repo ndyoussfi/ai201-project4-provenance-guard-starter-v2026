@@ -64,8 +64,16 @@ def sentence_length_spread(text: str) -> float:
     `stdev` raises on fewer than two values. Decide what that should return
     before the attack set decides for you.
     """
-    # TODO: replace this
-    return 0.0
+    sents = sentences(text)
+    lengths = [len(words(s)) for s in sents]
+
+    # stdev needs at least 2 values. 1 sentence has no spread
+    if len(lengths) < 2:
+        return 0.0
+
+    mean = statistics.mean(lengths)
+    spread = statistics.stdev(lengths) / mean
+    return round(spread, 4)
 
 
 def type_token_ratio(text: str) -> float:
@@ -80,8 +88,13 @@ def type_token_ratio(text: str) -> float:
     directly comparable on it, and if your test inputs vary a lot in length,
     that alone can look like a signal.
     """
-    # TODO: replace this
-    return 0.0
+    w = words(text)
+
+    if len(w) == 0:
+        return 0.0
+
+    unique = len(set(w))
+    return round(unique / len(w), 4)
 
 
 def punctuation_density(text: str) -> float:
@@ -94,8 +107,14 @@ def punctuation_density(text: str) -> float:
         more interesting than full stops, because they vary more between
         writers.
     """
-    # TODO: replace this
-    return 0.0
+    w = words(text)
+    if len(w) == 0:
+        return 0.0
+
+    # expressive punctuation only; periods are skipped because every sentence has one
+    marks = ",;:!?-()"
+    count = sum(1 for ch in text if ch in marks)
+    return round(count / len(w), 4)
 
 
 # ── Combining them ───────────────────────────────────────────────────────────
@@ -122,8 +141,20 @@ def style_signal(text: str) -> float:
     you trust it. Plain and ordinary, not formal: formal prose reads as *human*
     to signal one, and it is plain writing that gets accused.
     """
-    # TODO: replace this
-    return 0.5
+    spread = sentence_length_spread(text)
+    ttr = type_token_ratio(text)
+    punct = punctuation_density(text)
+
+    # Turn each measure into 0-1 "AI-ness" (higher = more AI-like).
+    # Low spread, low variety and low punctuation all read as AI, so each is flipped.
+    spread_ai = 1 - min(spread, 1.0)
+    ttr_ai = 1 - ttr
+    punct_ai = 1 - min(punct / 0.2, 1.0)
+
+    # Spread gets the most weight: it was the only measure that separated
+    # my AI and human test texts in the expected direction.
+    score = 0.6 * spread_ai + 0.2 * ttr_ai + 0.2 * punct_ai
+    return round(min(max(score, 0.0), 1.0), 4)
 
 
 if __name__ == "__main__":

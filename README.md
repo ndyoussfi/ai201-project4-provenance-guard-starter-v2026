@@ -116,9 +116,18 @@ POST /appeal
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** A weighted average of the two signals. If the two signals differ by more than 0.3, the score is capped just below the AI threshold, so the result is "unsure" instead of "likely AI". Both signals have to agree before the system accuses someone. If they disagree on the human side, nothing changes, because nobody is harmed.
 
-**The numbers:**
+**The numbers:** model weight 0.5, style weight 0.5, disagreement limit 0.3 (all in config.py). I kept the weights equal because neither signal earned more trust in my tests: signal one put both of my own texts above 0.65, and two of the three style measures pointed the wrong way. Inside the style signal (`stylometry.py::style_signal`): sentence-length spread 0.6, type-token ratio 0.2, punctuation 0.2. Spread gets the most weight because it was the only measure that separated my AI and human test texts in the expected direction.
+
+My four test inputs, sent through POST /submit:
+
+| Input | Model | Style | Combined |
+|---|---|---|---|
+| Clearly AI (exercise paragraph) | 0.9188 | 0.6338 | 0.7763 |
+| Formal human (my prayer paragraph) | 0.8034 | 0.4791 | 0.64 (capped) |
+| Lightly-edited AI (exercise, my edits) | 0.4972 | 0.5358 | 0.5165 |
+| Clearly human (my casual message) | 0.342 | 0.3626 | 0.3523 |
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -126,6 +135,7 @@ POST /appeal
      somewhere else, say where. -->
 
 **A case where my two signals split, and what my rule does with it:**
+My prayer paragraph: model 0.8034, style 0.4791, a difference of 0.32. The rule capped it at 0.64, so it gets "unsure" instead of "likely AI". To be honest, the plain average was 0.641, already just under 0.65, so here the rule made sure rather than changing the label.
 
 
 

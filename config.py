@@ -56,6 +56,7 @@ DETECTOR_MAX_TOKENS = 400
 
 WEIGHT_MODEL_SIGNAL = 0.5
 WEIGHT_STYLE_SIGNAL = 0.5
+DISAGREEMENT_LIMIT = 0.3
 
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
