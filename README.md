@@ -299,7 +299,7 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 6 per minute, 120 per day (`RATE_LIMIT_PER_MINUTE` and `RATE_LIMIT_PER_DAY` in config.py)
 
 **Why those numbers and not others:**
 <!-- Think about two people: a real writer submitting their own work a few
@@ -307,17 +307,25 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
      thresholds. Your numbers have to be liveable for the first and hostile to
      the second. -->
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+I took these numbers from the instructor's demo in lecture, then checked whether they hold up for the two kinds of caller, and kept them because they do.
+
+- **6 per minute:** a real writer submits a piece, maybe fixes a typo and resubmits, so 2 or 3 tries in a minute. 6 leaves room for that. Each submission also runs GPT-2 for about a second, so 6 a minute keeps one caller from tying up the service.
+- **120 per day:** without a daily limit, a script staying just under the minute limit (5 a minute) could send about 7,200 requests a day. 120 is enough for a writer revising many times, but too few to map my thresholds precisely by sending variations.
+- **The trade-off:** a writer who revises and resubmits quickly might hit the 6 a minute limit and have to wait. And a script that uses a different creator_id for every request isn't stopped at all, because I have no server-wide limit, only a per-caller one.
+
+**What a caller counts as:** per creator_id. If a request has no usable creator_id, it counts against the caller's address instead (`rate_limit_key` in app.py). This is why only the flood rows can trip it: one script sending many creator_ids looks like many different writers.
 
 **The run of status codes when I pushed past it:**
 
 <!-- python run_attacks.py --flood 15 -->
 
-```
+From `results/flood_2026-11-04_1528.md`, 15 submissions as one creator_id:
 
 ```
+200 200 200 200 200 200 429 429 429 429 429 429 429 429 429
+```
+
+The first 6 are accepted and the other 9 get 429 with the message "Too many submissions. Try again shortly." Each 429 is logged as a rejection by the starter's 429 handler.
 
 ---
 
