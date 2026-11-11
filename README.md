@@ -593,22 +593,54 @@ Two misses from my criteria and eight broken attacks. They group into seven diag
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** one number in `config.py`: `AI_THRESHOLD` went from 0.70 to 0.75. Nothing else changed. Because the cap in `scoring.py::combine_signals` is `AI_THRESHOLD - 0.01`, the cap moved with it, from 0.69 to 0.74.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** the FP02, FP03, FP04, FP05 diagnosis. Four careful human writers (formal, second-language, rubric essay, technical docs) were labeled "likely AI" with scores of 0.718 to 0.744, just over 0.70. FP03, the second-language writer, was my worst outcome. My criteria say a false accusation costs a writer far more than missing some AI text, so I moved the line above that pile. I didn't fix the signals, which are the root cause (signal one reads careful writing as AI). I chose the threshold because it's one number, so the before and after compare cleanly.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+Results: `results/attack_run_2026-11-10_2222_after.md`, produced by `run_attacks.py --set attack_set --label after`, marked with the same rules as before.
 
+| Family | Total | BROKE before | BROKE after | Which broke after |
+|---|---|---|---|---|
+| evasion | 10 | 2 | 2 | EV05, EV06 |
+| false_positive | 8 | 4 | **0** | |
+| prompt_injection | 6 | 1 | 1 | PI02 |
+| malformed | 20 | 1 | 1 | RQ07 |
+| flood_same_creator | 12 | 0 | 0 | |
+| **Total** | **56** | **8** | **4** | |
 
+Only these rows changed (every other row has the same status, label and score):
 
-**Did it help, and how do I know:**
+| ID | Score | Before | After | Verdict after |
+|---|---|---|---|---|
+| FP02 | 0.720 | likely AI | unsure | HELD |
+| FP03 | 0.732 | likely AI | unsure | HELD |
+| FP04 | 0.718 | likely AI | unsure | HELD |
+| FP05 | 0.744 | likely AI | unsure | HELD |
+| FP06 | 0.690 → 0.704 | unsure | unsure | HELD (the cap moved to 0.74, so its average of 0.7037 is no longer cut down) |
 
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
+**My criteria, after** (`results/run_2026-11-10_2222_after.md` and `results/extra_2026-11-10_2222_after.md`, 3 trials, identical each time):
 
+| Criterion | Before | After | Verdict before | Verdict after |
+|---|---|---|---|---|
+| 1. My writing flagged | 1 of 10 (piece 7) | 1 of 10 (piece 7) | MET | MET |
+| 2. Appeals | 10 of 10; 3 of 3 fake 404, 0 logged | same | MET | MET |
+| 3. AI vs human gap | 0.0843 | 0.1035 | MISSED | MISSED |
+| 4. Label coverage | human 1, unsure 12, likely AI 2 | human 1, unsure 13, likely AI 1 | MISSED | MISSED |
+| 5. Bad input | 6 of 6 got 400, 0 decisions, /ping 200 | same | MET | MET |
 
+In the exact-score test, 0.70 now returns unsure instead of likely AI. All 10 scores still return exactly one label.
+
+**Did it help, and how do I know:** Yes, for the problem I targeted. All four false positives in the attack set are now unsure, so the attack set accuses no human writers. Broken attacks dropped from 8 to 4, and nothing that held before broke. I know because the same 56 attacks were re-run with only this number changed, and only the FP rows moved.
+
+What it cost:
+- **More AI text gets through.** My chatbot piece 2 (0.7139) was "likely AI" before and is unsure now. All 5 of my chatbot pieces are now unsure, and criterion 4 got worse: only 1 piece reached "likely AI" (my own piece 7). The unsure band is now 0.40 to 0.75, and 13 of 15 pieces land in it.
+- **It's a narrow fix.** FP05 sits at 0.744, only 0.006 under the new line. Slightly more careful writing would cross it again.
+- **My own false positive is still there.** Piece 7 (0.7951) is still labeled "likely AI", so criterion 1 is still exactly at its limit.
+- **Criterion 3's gap grew from 0.0843 to 0.1035, but only as a side effect.** The cap moved up to 0.74, so AI pieces 1 and 3 rose from 0.69 to 0.7357 and 0.74. The signals didn't get any better at telling AI from human. It's still far from 0.3.
+
+The threshold decides who pays for the signals' mistakes. It doesn't fix them. I moved the cost from careful human writers onto missed AI text, which is the trade my criteria said to make.
 
 ---
 

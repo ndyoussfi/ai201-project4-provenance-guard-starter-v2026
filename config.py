@@ -73,7 +73,7 @@ DISAGREEMENT_LIMIT = 0.3
 # that decide who pays for it.
 
 HUMAN_THRESHOLD = 0.40
-AI_THRESHOLD = 0.70
+AI_THRESHOLD = 0.75
 
 # Input limits for POST /submit (criterion 5). Under MIN_WORDS the score is too
 # noisy to judge someone's writing fairly; over MAX_WORDS the request is slow and
