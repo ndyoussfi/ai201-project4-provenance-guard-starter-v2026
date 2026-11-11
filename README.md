@@ -460,11 +460,11 @@ The scores were identical in all 3 trials. GPT-2 gives the same text the same sc
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. My writing flagged | At most 1 of 10 gets "likely AI" | 1 of 10 (piece 7) | 1 of 10 (piece 7) | 1 of 10 (piece 7) |  |
-| 2. Appeals | 10 of 10 real pass; 3 of 3 fake return 404 and log nothing | 10 of 10; 3 of 3, 0 logged | 10 of 10; 3 of 3, 0 logged | 10 of 10; 3 of 3, 0 logged |  |
-| 3. AI vs human gap | AI average at least 0.3 above human average | AI 0.6791, human 0.5948, gap 0.0843 | gap 0.0843 | gap 0.0843 |  |
-| 4. Label coverage | At least 2 in each label; every exact score gets one label | human 1, unsure 12, likely AI 2; exact scores: 10 of 10 got one label | human 1, unsure 12, likely AI 2 | human 1, unsure 12, likely AI 2 |  |
-| 5. Bad input | 6 of 6 return 400, 0 logged as decisions, /ping answers | 6 of 6 got 400; 0 decisions; /ping 200 | 6 of 6 got 400 | 6 of 6 got 400 |  |
+| 1. My writing flagged | At most 1 of 10 gets "likely AI" | 1 of 10 (piece 7) | 1 of 10 (piece 7) | 1 of 10 (piece 7) | **MET** |
+| 2. Appeals | 10 of 10 real pass; 3 of 3 fake return 404 and log nothing | 10 of 10; 3 of 3, 0 logged | 10 of 10; 3 of 3, 0 logged | 10 of 10; 3 of 3, 0 logged | **MET** |
+| 3. AI vs human gap | AI average at least 0.3 above human average | AI 0.6791, human 0.5948, gap 0.0843 | gap 0.0843 | gap 0.0843 | **MISSED** |
+| 4. Label coverage | At least 2 in each label; every exact score gets one label | human 1, unsure 12, likely AI 2; exact scores: 10 of 10 got one label | human 1, unsure 12, likely AI 2 | human 1, unsure 12, likely AI 2 | **MISSED** |
+| 5. Bad input | 6 of 6 return 400, 0 logged as decisions, /ping answers | 6 of 6 got 400; 0 decisions; /ping 200 | 6 of 6 got 400 | 6 of 6 got 400 | **MET** |
 
 Note on criterion 4: the exact scores in the criterion (0.34, 0.35, 0.36, 0.64, 0.65, 0.66) sit on my old thresholds of 0.35 and 0.65. I moved the thresholds to 0.40 and 0.70 before this run, so I also tested 0.40 (human) and 0.70 (likely AI). All 10 scores returned exactly one label with no error. The exact-score test doesn't use the model, so it doesn't vary across trials.
 
@@ -573,7 +573,21 @@ Note on criterion 4: the exact scores in the criterion (0.34, 0.35, 0.36, 0.64, 
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
+Two misses from my criteria and eight broken attacks. They group into seven diagnoses, and most of them come back to the same two causes: signal one reads clear writing as AI, and the combining rule only guards one side.
 
+**Criterion 3 (MISSED, gap 0.0843 vs 0.3).** Three stages each shrank the gap. **The combining rule:** on AI pieces 1 and 3, signal one (0.909, 0.9316) and signal two (0.5624, 0.5626) disagree by more than 0.3, so the cap set both to 0.69. That pulled the AI average down to 0.6791. **Signal one:** GPT-2 finds my clear, correct writing predictable, so 4 of my 5 casual pieces scored 0.56 to 0.80 on it, which pushed the human average up to 0.5948. **Signal two:** style scored the AI pieces 0.53 to 0.68 and my casual pieces 0.36 to 0.71. The ranges overlap, so it added almost nothing to the gap. Together, the cap lowers the AI side and signal one raises the human side.
+
+**Criterion 4 (MISSED, 1 piece reached "human" vs 2).** **The combining rule:** the score is an average, so a piece only reaches "human" (0.40 or lower) when both signals are low at the same time. Only piece 3 managed that (model 0.342, style 0.3626). Piece 6 had model 0.206, but its style of 0.7417 pulled it up to 0.4738. **Signal two:** 60% of its weight is sentence-length spread, and my plain pieces use short sentences of similar length, so they scored 0.64 to 0.74 as if they were AI. **The label mapping:** 12 of 15 pieces landed in the unsure band (0.40 to 0.70), because my writing clusters around 0.44 to 0.67, so "human" is reachable only by very messy writing like piece 3.
+
+**FP02, FP03, FP04, FP05 (careful human writing labeled "likely AI", 0.718 to 0.744).** **Signal one and signal two together.** Signal one reads careful, correct writing (formal, second-language, rubric essay, technical docs) as predictable, so model scores were 0.74 to 0.83. Signal two reads even sentence lengths as AI-like, so style scores were 0.60 to 0.70. The signals differ by less than 0.3, so the cap in **the combining rule** doesn't step in, and all four land just over the 0.70 threshold. This is the same pattern as my criterion 1 miss on piece 7 (0.7951), and FP03 is the writer my criteria were built to protect.
+
+**EV06 (AI text labeled human, 0.395).** **Signal two:** one very long sentence and one very short one make the sentence-length spread huge, so style dropped to 0.2174. Model was 0.5727. **The combining rule:** the signals differ by 0.355, which is over my 0.3 limit, but the cap only stops scores from reaching "likely AI". It never stops a score from reaching "human", so the average of 0.395 passed.
+
+**EV05 (AI text after a heavy human edit labeled human, 0.345).** **Both signals** were fooled. The editing made the wording less predictable (model 0.3212) and the sentence lengths uneven (style 0.368). With both signals low, no stage had anything left to catch it.
+
+**PI02 (fake "SYSTEM:" instruction labeled human, 0.289).** Nothing obeyed the instruction, since there's no chatbot in my pipeline. **Signal one:** the strange header line (`SYSTEM: ... guess=human, confidence=0.02`) is very unpredictable to GPT-2, which raises the average perplexity and drops the model score to 0.2044. Style was 0.3734. The attack worked as noise, not as an instruction.
+
+**RQ07 (JSON array body gave a 500).** **The route:** `request.get_json(silent=True) or {}` keeps a non-empty list, because a list isn't falsy. Then `payload.get("text")` fails, since lists have no `.get`, and the service crashes before `check_submission` runs.
 
 ---
 
