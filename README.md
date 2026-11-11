@@ -52,7 +52,7 @@ Adds: a second, independent piece of evidence: a score from 0 to 1 (style_score)
 Adds: one combined score from 0 to 1 (combined_score), so there's a single number to compare against the thresholds.
 
 
-6. scoring.py (score_to_label) turns the combined score into one of three labels (human, unsure, or likely AI) using two thresholds (0.40 and 0.70 in config.py).
+6. scoring.py (score_to_label) turns the combined score into one of three labels (human, unsure, or likely AI) using two thresholds (0.40 and 0.75 in config.py; the AI threshold was 0.70 until the unit 8 improvement).
 Adds: the plain-English message a writer actually reads. It says how sure the system is in words, says what happens next, and doesn't accuse them.
 
 7. The decision is written to logs/audit.jsonl through audit.py, and the response goes back with the content_id, guess, confidence score, and label text.
@@ -151,10 +151,10 @@ My prayer paragraph: model 0.8034, style 0.4791, a difference of 0.32, which is 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
 | high-confidence human | 0.00 to 0.40 | Our automated check thinks this was probably written by a person. Automated checks aren't perfect, but we didn't find signs of AI help. Nothing changes: your post stays up as normal. No action is needed. |
-| unsure | 0.40 to 0.70 | Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it. |
-| high-confidence AI | 0.70 to 1.00 | Our automated check found patterns that often appear in AI-assisted writing. Automated checks can be wrong, especially on clear or simple writing. This is an estimate, not proof. Your post stays up, with a note that it may be AI-assisted. If you wrote this yourself, tell us about your writing and a person will review it. |
+| unsure | 0.40 to 0.75 | Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it. |
+| high-confidence AI | 0.75 to 1.00 | Our automated check found patterns that often appear in AI-assisted writing. Automated checks can be wrong, especially on clear or simple writing. This is an estimate, not proof. Your post stays up, with a note that it may be AI-assisted. If you wrote this yourself, tell us about your writing and a person will review it. |
 
-A score of exactly 0.40 counts as human, and exactly 0.70 counts as likely AI (`scoring.py::score_to_label`). The thresholds are `HUMAN_THRESHOLD` and `AI_THRESHOLD` in config.py.
+A score of exactly 0.40 counts as human, and exactly 0.75 counts as likely AI (`scoring.py::score_to_label`). In unit 8 I raised the AI threshold from 0.70 to 0.75 (see The Improvement). The thresholds are `HUMAN_THRESHOLD` and `AI_THRESHOLD` in config.py.
 
 **Why I moved the thresholds from 0.35 / 0.65 to 0.40 / 0.70:** At 0.65, a shortened version of my own Morocco travel message scored 0.6683 and would have been labeled "likely AI". At 0.35, my casual message to a friend scored 0.3523 and could not reach "human", even with typos and "!!!!". At 0.40 / 0.70, every one of my test texts lands where it should, and my clearly-AI example (0.7763) still gets caught. The trade-off is that some AI text scoring between 0.65 and 0.70 now gets "unsure" instead of "likely AI". I accept more misses so that fewer real writers get accused.
 
@@ -292,6 +292,18 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 - *What I asked for:* Whether to keep the starter thresholds of 0.35 / 0.65 or change them before writing my labels.
 - *What came back:* A suggestion to move them to 0.40 / 0.70, with a table showing where each of my test texts would land under both settings.
 - *What I changed:* I moved them because of two results from my own writing. A shortened version of my Morocco travel message scored 0.6683, so at 0.65 it would have been labeled "likely AI". My casual message to a friend scored 0.3523, so at 0.35 it couldn't reach "human", even with typos. To check the change, I ran `label_ranges()` to make sure there were no gaps, and I curled three texts that came back ai, unsure and human. I also wrote down the trade-off: some AI text between 0.65 and 0.70 now gets "unsure" instead of "likely AI".
+
+**Moment 3 (unit 8): building the test for my criteria**
+
+- *What I asked for:* help turning my five criteria into something `run_eval.py` could run, since it only sends text to `/submit` and can't test appeals.
+- *What came back:* a filled-in `scenarios.py` and a new script, `eval_extra.py`, that sends the appeals, feeds the exact scores into `score_to_label`, and checks the log and `/ping`. The AI also wrote the 5 clearly-AI pieces for criterion 3, which is allowed by my criterion (chatbot text pasted in unedited).
+- *What I changed:* the 10 human pieces are mine. I wrote them fresh for the test and didn't edit them to change the score. I sorted them into plain and casual by sentence length, and pieces I meant as plain but wrote with long sentences went into casual instead. The first run of `eval_extra.py` crashed, because an attack-run log entry had a dict as its creator_id (RQ06), so the script was fixed to skip non-string ids. I also had to fix the attack command, which first ran without `--set attack_set`.
+
+**Moment 4 (unit 8): diagnosing and choosing the improvement**
+
+- *What I asked for:* help when I was stuck on the diagnoses, and a recommendation for the one improvement.
+- *What came back:* multiple-choice options for each diagnosis (possible causes, with the numbers to check), and a recommendation to raise `AI_THRESHOLD` from 0.70 to 0.75, with its costs listed up front.
+- *What I changed:* I picked each cause myself by checking it against the scores in my run log. For example, I confirmed the cap from AI pieces 1 and 3 both landing at exactly 0.69. I took the threshold recommendation because it matched my own criterion that a false accusation costs more than a missed AI text. After the re-run, I reported its costs as well as the fix: all 5 chatbot pieces became unsure, and the criterion 3 gap grew only because the cap moved with the threshold.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
@@ -649,12 +661,20 @@ The threshold decides who pays for the signals' mistakes. It doesn't fix them. I
 <!-- For each attack still getting through and each criterion still missed:
      what you'd do, and why you stopped. -->
 
+Four attacks still break (EV05, EV06, PI02, RQ07) and two criteria are still missed (3 and 4). For all of them, I stopped for the same reason: unit 8 allows one improvement, and I used it on the false positives, because accusing a real writer was my worst outcome.
 
+- **RQ07 (a JSON array body gives a 500).** *What I'd do:* add `if not isinstance(payload, dict)` at the top of `submit` and `appeal` and return 400 with a message. It's a two-line fix in the route, and the attack run would show 500 become 400. *Why I stopped:* it was the easiest fix, but it doesn't touch any score or any criterion, and only one attack hits it, so it did less for the people using the site than the threshold did.
+- **EV06 (one very long and one very short sentence fool signal two).** *What I'd do:* make the cap in `scoring.py::combine_signals` two-sided. When the signals disagree by more than 0.3, keep the score inside unsure (0.41 to 0.74), so a big disagreement can't reach "human" any more than it can reach "likely AI". EV06 (0.395) would become unsure. *Why I stopped:* one improvement only, and it changes the combining rule for every input, so it needs its own before and after run.
+- **EV05 (AI text after a heavy human edit gets "human").** *What I'd do:* accept it. After a heavy edit, the text is partly human writing, and both signals agreed it looked human (model 0.3212, style 0.368). Catching it would mean moving the human line down, and that would push writers like my casual piece 3 (0.3523) out of "human".
+- **PI02 (the fake "SYSTEM:" line drags signal one down).** *What I'd do:* score each paragraph separately and use the highest score, so one strange line can't pull the whole average down. The injected header would score as noise, and the AI paragraph under it would still be judged on its own. *Why I stopped:* it changes how signal one reads every text, which is too big to fit with the threshold change and still compare before and after cleanly.
+- **Criteria 3 and 4 (the signals don't separate AI from human, and 13 of 15 pieces land in unsure).** *What I'd do:* fix both signals, starting with signal one. Signal one is the root cause: GPT-2 reads clear, careful writing as predictable, so my own writing and the FP writers score 0.56 to 0.87 on it. I'd try a stronger model than GPT-2. Then I'd rebalance signal two, with less weight on sentence-length spread and something new such as word rarity, so plain writing stops looking like AI. This would also help my piece 7 (0.7951), which keeps criterion 1 exactly at its limit. *Why I stopped:* it's the most work, and it isn't one change, so it can't be measured as one improvement.
 
 **The trade I'd make if this ran for real:**
 
 <!-- Two sentences. Fewer wrong accusations means more AI text getting through.
      Say which way you'd go and WHO PAYS FOR IT. -->
+
+I'd keep the wide unsure band, because a false "likely AI" label can make a careful or second-language writer like Amina leave the site, and an unsure label costs her nothing. The people who pay are readers and honest writers, who will see more AI text go unlabeled as unsure instead of caught.
 
 
 
