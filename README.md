@@ -452,20 +452,110 @@ whose work got caught by it:
 
 <!-- Your five criteria across three trials. `run_eval.py --label before`. -->
 
+How I ran it: `python run_eval.py --label before` sent my scenarios from `scenarios.py` to `POST /submit` 3 times. `run_eval.py` can't send appeals, so I extended the test with `eval_extra.py`, which reads the run report for the criterion 1, 3 and 4 numbers, sends the appeals for criterion 2 (30 real and 9 fake across 3 trials), feeds the exact scores from criterion 4 into `scoring.py::score_to_label`, and checks the log and `/ping` for criterion 5. Results: `results/run_2026-11-10_2034_before.md` and `results/extra_2026-11-10_2035_before.md`.
+
+Inputs: criterion 1 is 10 pieces I wrote myself (5 casual, 5 plain). Criterion 3 uses 5 pieces written by a chatbot (Claude) and pasted in unedited, compared with my 5 casual pieces. Criterion 4 counts labels across all 15 of those pieces.
+
+The scores were identical in all 3 trials. GPT-2 gives the same text the same score every time, so the trials repeat rather than vary.
+
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. My writing flagged | At most 1 of 10 gets "likely AI" | 1 of 10 (piece 7) | 1 of 10 (piece 7) | 1 of 10 (piece 7) |  |
+| 2. Appeals | 10 of 10 real pass; 3 of 3 fake return 404 and log nothing | 10 of 10; 3 of 3, 0 logged | 10 of 10; 3 of 3, 0 logged | 10 of 10; 3 of 3, 0 logged |  |
+| 3. AI vs human gap | AI average at least 0.3 above human average | AI 0.6791, human 0.5948, gap 0.0843 | gap 0.0843 | gap 0.0843 |  |
+| 4. Label coverage | At least 2 in each label; every exact score gets one label | human 1, unsure 12, likely AI 2; exact scores: 10 of 10 got one label | human 1, unsure 12, likely AI 2 | human 1, unsure 12, likely AI 2 |  |
+| 5. Bad input | 6 of 6 return 400, 0 logged as decisions, /ping answers | 6 of 6 got 400; 0 decisions; /ping 200 | 6 of 6 got 400 | 6 of 6 got 400 |  |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+Note on criterion 4: the exact scores in the criterion (0.34, 0.35, 0.36, 0.64, 0.65, 0.66) sit on my old thresholds of 0.35 and 0.65. I moved the thresholds to 0.40 and 0.70 before this run, so I also tested 0.40 (human) and 0.70 (likely AI). All 10 scores returned exactly one label with no error. The exact-score test doesn't use the model, so it doesn't vary across trials.
+
+**Real output from trial 1**, produced by `run_eval.py::main` sending to `app.py::submit` (scored by `scoring.py::combine_signals`, labeled by `scoring.py::score_to_label`). Three entries: my flagged piece 7 (criterion 1), the first AI piece (criterion 3), and the first bad request (criterion 5):
 
 ```json
-
+[
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7951,
+    "model_score": 0.8732,
+    "style_score": 0.7169,
+    "label": "Our automated check found patterns that often appear in AI-assisted writing. Automated checks can be wrong, especially on clear or simple writing. This is an estimate, not proof. Your post stays up, with a note that it may be AI-assisted. If you wrote this yourself, tell us about your writing and a person will review it.",
+    "sent": "I called an old friend of mine today. I haven't talked to him for over"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.69,
+    "model_score": 0.909,
+    "style_score": 0.5624,
+    "label": "Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it.",
+    "sent": "Regular physical activity offers a wide range of benefits for both the"
+  },
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "{\"creator_id\": \"eval_bad_missing_text\"}"
+  }
+]
 ```
+
+**Real output for criterion 2**, produced by `eval_extra.py::appeals` sending to `app.py::appeal`. The response, then the log entries for that content_id afterward (from `GET /log`):
+
+```json
+{
+  "content_id": "c0b12f6a-e44b-4ff1-b905-a81aeb88b1f7",
+  "message": "Thanks. Your appeal was received and a person will review it.",
+  "status": "under_review"
+}
+```
+
+```json
+[
+  {
+    "combined_score": 0.6191,
+    "content_id": "c0b12f6a-e44b-4ff1-b905-a81aeb88b1f7",
+    "creator_id": "eval_c3 clearly A_5",
+    "guess": "unsure",
+    "model_score": 0.7087,
+    "status": "decided",
+    "style_score": 0.5295,
+    "timestamp": "2026-11-11T04:34:24+00:00"
+  },
+  {
+    "content_id": "c0b12f6a-e44b-4ff1-b905-a81aeb88b1f7",
+    "creator_id": "eval_c3 clearly A_5",
+    "event": "appeal",
+    "reasoning": "Trial 1, appeal 1: I wrote this myself.",
+    "status": "under_review",
+    "timestamp": "2026-11-11T04:35:10+00:00"
+  }
+]
+```
+
+(The `label` text in the decision entry is left out here because it's the same unsure label shown above.)
+
+**Scores for every piece, trial 1** (identical in trials 2 and 3):
+
+| Piece | Type | Model | Style | Combined | Label |
+|---|---|---|---|---|---|
+| 1. Prayer | casual | 0.8034 | 0.4791 | 0.6412 | unsure |
+| 2. Morocco | casual | 0.7337 | 0.6028 | 0.6683 | unsure |
+| 3. Allah bless you | casual | 0.342 | 0.3626 | 0.3523 | human |
+| 4. Morning routine | casual | 0.5644 | 0.7133 | 0.6389 | unsure |
+| 5. Car battery | casual | 0.6675 | 0.679 | 0.6733 | unsure |
+| 6. Missed prayers | plain | 0.206 | 0.7417 | 0.4738 | unsure |
+| 7. Old friend | plain | 0.8732 | 0.7169 | 0.7951 | likely AI |
+| 8. Thanksgiving | plain | 0.5427 | 0.6449 | 0.5938 | unsure |
+| 9. Gym | plain | 0.5084 | 0.3779 | 0.4431 | unsure |
+| 10. MacBook | plain | 0.3839 | 0.6488 | 0.5164 | unsure |
+| AI 1. Exercise | chatbot | 0.909 | 0.5624 | 0.69 (capped) | unsure |
+| AI 2. Time management | chatbot | 0.7446 | 0.6832 | 0.7139 | likely AI |
+| AI 3. Climate | chatbot | 0.9316 | 0.5626 | 0.69 (capped) | unsure |
+| AI 4. Language | chatbot | 0.8392 | 0.5263 | 0.6827 | unsure |
+| AI 5. Artificial intelligence | chatbot | 0.7087 | 0.5295 | 0.6191 | unsure |
 
 **Diagnoses**
 
