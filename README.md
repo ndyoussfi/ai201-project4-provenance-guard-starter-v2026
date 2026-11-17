@@ -714,3 +714,22 @@ I'd keep the wide unsure band, because a false "likely AI" label can make a care
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
+
+**What This Extends**
+
+This extends Provenance Guard, my Project 4 service. You send `POST /submit` with some text and a `creator_id`, and it scores how likely the text is AI-written using two signals (GPT-2 perplexity and a style signal), then returns a label and confidence. Every decision goes to `logs/audit.jsonl`, and creators can appeal.
+
+**The Shape**
+
+Shape B: harden one failure. The failure I'm picking is the model going down. Right now `/submit` calls `detector.model_signal(text)` with nothing around it, so if GPT-2 can't load (bad model name, missing cache, torch not installed) the user gets a raw 500 error and nothing is written to the audit log. The request just disappears. I'm changing it so a model outage returns a clear response that says the detector is unavailable and to try again later, and writes an audit record so I can see it happened and how often. I'll trigger the outage on purpose by setting `DETECTOR_MODEL` to a model name that doesn't exist. Adding timing and input to every log line is the instrumentation every shape needs, not a second feature.
+
+Out of scope:
+- I'm not fixing RQ07 (a JSON array as the body still returns a 500). It's a different failure, and I already wrote it up under What's Still Broken.
+- I'm not adding a style-only fallback that keeps scoring when the model is down. That would be a second feature and would change what the labels mean.
+- I'm not touching the scoring or the 0.75 threshold, and I'm not hosting on Render, since torch doesn't fit in 512 MB. This runs locally with logs (Path B).
+
+Stretch: I'm adding a latency breakdown, timing each stage of one `/submit` request (validation, model signal, style signal, scoring, audit write) to see where the time goes.
