@@ -1,0 +1,8 @@
+1d7869bc 4503.3 {'validate_ms': 0.0, 'model_ms': 4502.9, 'style_ms': 0.3, 'score_ms': 0.0}
+fac4e4e0 65.9 {'validate_ms': 0.0, 'model_ms': 65.7, 'style_ms': 0.2, 'score_ms': 0.0}
+bd6b36ec 62.1 {'validate_ms': 0.0, 'model_ms': 61.8, 'style_ms': 0.2, 'score_ms': 0.0}
+
+audit write (from the server console, same 3 requests):
+1d7869bc audit_write_ms=0.3
+fac4e4e0 audit_write_ms=0.3
+bd6b36ec audit_write_ms=0.4

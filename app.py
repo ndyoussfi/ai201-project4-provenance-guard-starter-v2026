@@ -247,7 +247,9 @@ def submit():
         return jsonify({"error": "bad_input", "message": problem}), 400
 
     content_id = str(uuid.uuid4())
+    stages = {"validate_ms": _ms_since(start)}
 
+    t = time.perf_counter()
     try:
         model_score = detector.model_signal(text)
     except detector.DetectorUnavailable as exc:
@@ -263,14 +265,21 @@ def submit():
         )
         return jsonify({
             "error": "detector_unavailable",
-            "message": "The AI-writing check is temporarily unavailable, so "
-                        "nothing was decided about your post. Please try again later.",
+            "message": "The AI-writing check is temporarily unavailable, so nothing was decided about your post. Please try again later.",
         }), 503
 
+    stages["model_ms"] = _ms_since(t)
+
+    t = time.perf_counter()
     style_score = stylometry.style_signal(text)
+    stages["style_ms"] = _ms_since(t)
+
+    t = time.perf_counter()
     combined = scoring.combine_signals(model_score, style_score)
     guess, label = scoring.score_to_label(combined)
+    stages["score_ms"] = _ms_since(t)
 
+    t = time.perf_counter()
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
@@ -281,8 +290,11 @@ def submit():
         label=label,
         status="decided",
         duration_ms=_ms_since(start),
+        stages_ms=stages,
         **_input_summary(text),
     )
+    # A record can't hold its own write time, so this one goes to the console.
+    print(f"[timing] {content_id} audit_write_ms={_ms_since(t)}", flush=True)
 
     return jsonify({
         "content_id": content_id,
