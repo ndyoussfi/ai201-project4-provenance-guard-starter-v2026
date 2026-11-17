@@ -1,0 +1,7 @@
+{
+  "error": "detector_unavailable",
+  "message": "The AI-writing check is temporarily unavailable, so nothing was decided about your post. Please try again later."
+}
+
+HTTP 503
+{"timestamp": "2026-11-17T01:23:41+00:00", "content_id": "79e87c69-562f-4b7a-aae4-55dc71a174fe", "creator_id": "m2-outage", "guess": null, "model_score": null, "style_score": null, "combined_score": null, "label": null, "status": "unavailable", "event": "detector_unavailable", "error": "Couldn't load 'does-not-exist': does-not-exist is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'", "duration_ms": 3052.8, "text_chars": 197, "text_preview": "The committee reviewed the proposal over several weeks and raised concerns about"}

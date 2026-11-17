@@ -248,7 +248,25 @@ def submit():
 
     content_id = str(uuid.uuid4())
 
-    model_score = detector.model_signal(text)
+    try:
+        model_score = detector.model_signal(text)
+    except detector.DetectorUnavailable as exc:
+        # Shape B: a model outage gets a clear answer and leaves a trace.
+        audit.log_decision(
+            content_id=content_id,
+            creator_id=creator_id,
+            status="unavailable",
+            event="detector_unavailable",
+            error=str(exc).splitlines()[0],
+            duration_ms=_ms_since(start),
+            **_input_summary(text),
+        )
+        return jsonify({
+            "error": "detector_unavailable",
+            "message": "The AI-writing check is temporarily unavailable, so "
+                        "nothing was decided about your post. Please try again later.",
+        }), 503
+
     style_score = stylometry.style_signal(text)
     combined = scoring.combine_signals(model_score, style_score)
     guess, label = scoring.score_to_label(combined)
