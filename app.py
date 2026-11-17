@@ -24,6 +24,7 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import time
 import uuid
 
 from flask import Flask, jsonify, request
@@ -173,6 +174,18 @@ def check_submission(text, creator_id):
     return None
 
 
+def _ms_since(start: float) -> float:
+    """Milliseconds since `start` (a time.perf_counter() value)."""
+    return round((time.perf_counter() - start) * 1000, 1)
+
+
+def _input_summary(text) -> dict:
+    """What came in, short enough to log. Safe when text is missing or not a string."""
+    if not isinstance(text, str):
+        return {"text_chars": None, "text_preview": None}
+    return {"text_chars": len(text), "text_preview": text[:80]}
+
+
 @app.post("/submit")
 @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
@@ -222,6 +235,7 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
+    start = time.perf_counter()
     payload = request.get_json(silent=True) or {}
     text = payload.get("text")
     creator_id = payload.get("creator_id")
@@ -229,7 +243,7 @@ def submit():
     # Stop bad input before scoring. It's logged as a rejection, not a decision.
     problem = check_submission(text, creator_id)
     if problem:
-        audit.log_rejection(creator_id, problem)
+        audit.log_rejection(creator_id, problem, duration_ms=_ms_since(start), **_input_summary(text))
         return jsonify({"error": "bad_input", "message": problem}), 400
 
     content_id = str(uuid.uuid4())
@@ -248,6 +262,8 @@ def submit():
         combined_score=combined,
         label=label,
         status="decided",
+        duration_ms=_ms_since(start),
+        **_input_summary(text),
     )
 
     return jsonify({
