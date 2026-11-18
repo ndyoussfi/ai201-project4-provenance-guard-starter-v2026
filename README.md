@@ -835,3 +835,49 @@ All five MET, 3 of 3 trials each. I don't think that means all five targets were
 - Criterion 3 was set too loose, and the numbers show why. I wrote it thinking every outage request took about 3 seconds, because that's what I saw in Milestone 2. That was a first request. The real pattern is one slow request per server start (2.2 to 2.6 s), then about 100 ms for every request after it. A median hides the slow one, and a 5-second max lets it through.
 
 Where the outage time actually goes (stage: `detector._load()`). The first time `_load()` runs it imports torch and transformers, then asks Hugging Face for the model. The imports are most of that first request: they took 3.8 s when I timed them alone in a fresh Python, while the whole first request inside the server was 2.2 to 2.6 s, so the import time moves around with what the disk has cached, and the lookup is the small part. When that fails, `_load()` raises `DetectorUnavailable` but doesn't remember that it failed, so the next request calls `from_pretrained` again and makes another network lookup. I timed those lookups at 225 ms, then 96 ms, then 92 ms. So during an outage, every request spends about 95 ms re-asking Hugging Face for a model it already knows isn't there, and the one worker can't serve anyone else during that time.
+
+**The Improvement**
+
+What I changed: `detector._load()` now remembers a failed load. When loading the model fails, it saves the error message and the time, and for the next 30 seconds (`RETRY_AFTER_SECONDS`) any request gets that same `DetectorUnavailable` straight from memory instead of asking Hugging Face again. After 30 seconds it really tries again, and a successful load clears the memory. The change is only in `detector.py`. Commit `d4bef3e`.
+
+Why this one: it comes straight from the diagnosis above. The stage was `_load()`, and the mechanism was that a failed load isn't remembered, so every outage request made another network lookup (about 95 ms) for a model that wasn't there, while holding the only worker.
+
+Before (`results/capstone_run_before_2026-11-17_2201.md`):
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Outage gets a clear 503, never a 500 | 5 of 5, 0 500s | 5/5, 0 500s | 5/5, 0 500s | 5/5, 0 500s | MET |
+| 2. Every outage leaves exactly one trace | 5 of 5, 0 decided | 5/5 records, 0 decided | 5/5 records, 0 decided | 5/5 records, 0 decided | MET |
+| 3. Outage answer comes back fast | median < 1 s, max < 5 s | median 99.0 ms, max 2597.2 ms | median 100.6 ms, max 2216.7 ms | median 100.2 ms, max 2296.7 ms | MET |
+| 4. Guard didn't change normal decisions | all identical to Unit 8 | 15/15 identical | 15/15 identical | 15/15 identical | MET |
+| 5. Latency breakdown adds up | 100%, gap <= 1 ms | 15/15, max gap 0.1 ms | 15/15, max gap 0.1 ms | 15/15, max gap 0.1 ms | MET |
+
+After, same script, same three trials (`results/capstone_run_after_2026-11-17_2227.md`):
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Outage gets a clear 503, never a 500 | 5 of 5, 0 500s | 5/5, 0 500s | 5/5, 0 500s | 5/5, 0 500s | MET |
+| 2. Every outage leaves exactly one trace | 5 of 5, 0 decided | 5/5 records, 0 decided | 5/5 records, 0 decided | 5/5 records, 0 decided | MET |
+| 3. Outage answer comes back fast | median < 1 s, max < 5 s | median 0.1 ms, max 3245.2 ms | median 0.1 ms, max 2236.0 ms | median 0.1 ms, max 2209.1 ms | MET |
+| 4. Guard didn't change normal decisions | all identical to Unit 8 | 15/15 identical | 15/15 identical | 15/15 identical | MET |
+| 5. Latency breakdown adds up | 100%, gap <= 1 ms | 15/15, max gap 0.1 ms | 15/15, max gap 0.1 ms | 15/15, max gap 0.1 ms | MET |
+
+The number that moved, outage `duration_ms` per trial:
+
+Before:
+- trial 1: [2597.2, 95.3, 90.4, 99.0, 106.5]
+- trial 2: [2216.7, 100.6, 99.3, 106.5, 91.2]
+- trial 3: [2296.7, 100.2, 94.0, 104.8, 91.4]
+
+After:
+- trial 1: [3245.2, 0.1, 0.1, 0.1, 0.1]
+- trial 2: [2236.0, 0.1, 0.1, 0.1, 0.1]
+- trial 3: [2209.1, 0.1, 0.1, 0.1, 0.1]
+
+Did it help? Yes, for what it was aimed at. Requests 2 to 5 of every outage went from 90 to 107 ms down to 0.1 ms, all 12 of them, and the median went from about 100 ms to 0.1 ms. Criteria 1, 2, 4 and 5 came out exactly the same, so the change didn't break the guard, the log records or normal scoring.
+
+What it didn't fix: the first outage request after a server start is still 2.2 to 3.2 s, because that one still has to import torch and transformers and make the one real lookup. The 3,245 ms in trial 1 is import time moving around, not something the change caused (the before run had a 2,597 ms first request too).
+
+The trade I made: if the model comes back, the service can keep answering 503 for up to 30 more seconds before it notices. I picked 30 seconds because an outage like a missing model or a full disk doesn't fix itself in under a minute, and a short window still means it recovers without a restart.
+
+None of the verdicts changed, because criterion 3 was MET before and after. That's the clearest sign it was set too loose: its median was already under 1 second before the fix, so it couldn't see the 95 ms I was paying on every request.
