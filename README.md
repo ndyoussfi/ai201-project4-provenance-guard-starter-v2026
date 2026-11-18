@@ -903,31 +903,6 @@ What I'd do next with another unit: load the model when gunicorn starts, before 
 
 **How I Used AI**
 
-I used Claude (Claude Code in my terminal) for most of this unit. It drafted the code changes (the outage guard in `app.py`, the timing fields, `measure_cost.py`, `run_capstone.py`, the fix in `detector.py`) and drafted most of the capstone README text from my results. I pasted most of the code into my files myself. Claude wrote `run_capstone.py` and several README sections into the repo directly, and I appended or committed them after reading them. I ran every test and measurement myself, and every number in these sections comes from the output files in `results/`.
-
-Moment 1, the criteria. The brief says not to ask a model to write the criteria. Claude refused to write them several times and kept pointing me back to the brief. I was short on time, told it that course staff had given me permission, and asked again. It then drafted all five, on the condition that I disclose it here and at the top of the capstone section of `criteria.md`, which I did. I kept the 503 I had picked for criterion 1. What I'd change if I did it again: write them myself first. Criterion 3 turned out to be too loose, and I think that's partly because I didn't set the target myself from what a user would put up with.
-
-Moment 2, a prediction that was wrong. When the criteria were written, Claude predicted criterion 3 would probably miss, because in Milestone 2 I saw one outage request take about 3 seconds. The real runs showed only the first outage request is slow and the rest are about 100 ms. It didn't stick with the prediction: it timed the torch import (3.8 s) and the Hugging Face lookups (225, 96, 92 ms) separately, and that's what pointed the improvement at `_load()` not remembering a failure. What changed because of it: the "every outage request takes about 3 s" line in What It Costs was wrong, so it's corrected now, and the verdict for criterion 3 says plainly that the target was too loose instead of pretending it was close.
-
-**What's Still Broken**
-
-All five criteria were MET in both runs, so nothing is missed. That doesn't mean nothing is broken. Here's what I'd tighten and what's still wrong.
-
-The target I'd tighten is criterion 3. "Median under 1 second, max under 5 seconds" was set too low: it passed before my fix, when every outage request after the first was still paying about 95 ms for a network lookup it didn't need. I'd tighten it to: every outage request after the first one in a server start comes back in under 10 ms, in 3 of 3 trials. Against that target, the before run is MISSED (90 to 107 ms, 0 of 12) and the after run is MET (0.1 ms, 12 of 12), so it would have actually told the difference.
-
-Criteria 1 and 2 were never going to be close, because they check code that either runs or doesn't. A harder version of criterion 2 would check that the outage records can be counted over time, for example that `/log` or a count of `status: "unavailable"` matches the number of 503s across a whole day of traffic, not just 5 requests.
-
-Still broken in the system:
-- The first outage request after a start still takes 2.2 to 3.2 s, because torch and transformers are imported on the first request instead of when the server starts. My fix didn't touch this.
-- After the model comes back, the service can keep answering 503 for up to 30 seconds. That's the trade I chose in The Improvement.
-- RQ07 from Unit 8 is still broken (a JSON array as the body returns a 500). I left it out of scope on purpose because it's a different failure.
-
-Why I stopped: the extension does what I scoped, every criterion has three trials, and the one improvement is measured. The remaining items are each a separate change, and the brief allows one improvement.
-
-What I'd do next with another unit: load the model when gunicorn starts, before it accepts any request, instead of on the first request. That one change removes the 4 to 10 second cold start every real user can hit and the 2 to 3 second first outage response, and it lets `/health` report a broken model before anyone submits a post, which is the biggest wait anyone using this sees.
-
-**How I Used AI**
-
 I used Claude (Claude Code in my terminal) for most of this unit. It drafted some of the code changes (the outage guard in `app.py`, the timing fields, `measure_cost.py`, `run_capstone.py`, the fix in `detector.py`). Claude helped me write `run_capstone.py`. I ran every test and measurement myself, and every number in these sections comes from the output files in `results/`.
 
 Moment 1, I asked Claude what to run to test RUNNING.md on myself, and it gave me the exact clone, venv and install steps. Following them in a new folder worked, but every start printed a NumPy traceback that said the app "may crash." I pasted the output back, and Claude compared the two venvs: my original one had NumPy 1.26.4, the fresh one had 2.4.6, and torch 2.2.2 (the last build for Intel Macs) was compiled against NumPy 1.x. What I changed: I pinned `numpy<2` in `requirements.txt`, reinstalled in the clone to confirm the warning was gone with the same scores, and wrote the finding into RUNNING.md. Without that test, the next person to clone the repo would have hit it.
