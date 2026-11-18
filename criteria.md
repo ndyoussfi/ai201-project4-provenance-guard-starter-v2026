@@ -115,3 +115,41 @@ I send 6 bad requests to POST /submit: text missing, text empty (""), text only 
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+---
+
+## Capstone criteria (unit 9)
+
+Written before any capstone test was run. Drafted with Claude at my request, with permission from course staff. I chose the 503 in criterion 1 and reviewed every target and reason below before committing. Criteria 1, 2, 3 and 5 are about the extension. Criterion 4 checks that the extension didn't break what already worked.
+
+Outage trials: start the app with `AI201_DETECTOR_MODEL=does-not-exist gunicorn app:app --bind 127.0.0.1:5000 --workers 1` (and `AI201_RATE_LIMITS=0` so the limiter doesn't hide the result), then send 5 valid `/submit` requests. One trial = one fresh server start plus 5 requests. Three trials per criterion.
+
+### 1. A model outage gets a clear answer, never a crash
+
+**Target:** in each of 3 trials, 5 of 5 outage requests return HTTP 503 with `"error": "detector_unavailable"` and a message that says nothing was decided about the post. 0 return a 500.
+
+**Why this target:** the outage is deterministic: the model either loads or it doesn't, so there is no noise to allow for. One 500 means there is a path the guard doesn't cover, and a 500 tells the writer nothing (in debug mode it shows them a Python traceback). Anything below 5 of 5 is a gap, not bad luck. I'm not asking for more than the status, error code and that one fact in the message, because the wording itself can change without hurting anyone.
+
+### 2. Every outage leaves exactly one trace
+
+**Target:** in each of 3 trials, the number of new `status: "unavailable"` records in `logs/audit.jsonl` equals the number of 503s (5 for 5), each with `creator_id`, `error`, `duration_ms` and `text_chars` filled in, and 0 new `status: "decided"` records while the model is down.
+
+**Why this target:** before this change an outage left nothing in the log, which means I could never count how often it happened. A missing record brings that back, so it has to be every one. Exactly one, not "at least one," because duplicates would overcount outages. And 0 decisions matters most: a `decided` record with no model behind it would be a judgment about someone's writing that the system never actually made.
+
+### 3. An outage answer comes back fast
+
+**Target:** in each of 3 trials, the median outage response is under 1 second (`duration_ms` in the log), and no single outage request takes over 5 seconds.
+
+**Why this target:** saying "try again later" is cheap. It shouldn't cost more than a normal warm decision costs by much. Gunicorn runs one worker, so every second spent on a request that is going to fail anyway is a second no one else can be served. Under 1 second means the system isn't doing slow work it already knows will fail. I'm not asking for something like 50 ms, because the first request in an outage has to actually try the model to find out it's down, and that try can legitimately take a few seconds. The 5-second cap covers that first try.
+
+### 4. The guard didn't change normal decisions
+
+**Target:** with the normal model (`gpt2`), the Unit 8 eval inputs from `run_eval.py` give the same `model_score`, `style_score`, `confidence` and `guess` as `results/run_2026-11-10_2222_after.md`, to 4 decimals, in 3 of 3 trials.
+
+**Why this target:** the extension is supposed to change only what happens when the model is down. The scores are deterministic (the same text gave the same three scores every time I sent it), so any difference at all is a regression, not noise. That's why the target is exact and not "within 0.01." Compared to the Unit 8 after-run because that is the last version I submitted.
+
+### 5. The latency breakdown accounts for where the time goes
+
+**Target:** across all decisions written during the trials for criterion 4, 100% have `duration_ms`, `text_chars`, `text_preview` and `stages_ms` with all four keys (`validate_ms`, `model_ms`, `style_ms`, `score_ms`), and the four stages add up to within 1 ms of `duration_ms`.
+
+**Why this target:** the whole point of the stage timings is to say where a request's time goes. If they don't add up to the total, there's time I'm not seeing and the breakdown is misleading. 1 ms is about the cost of everything that isn't a named stage (making the `content_id`, building the record) on a request that takes 40 ms or more, so a bigger gap means a stage is missing. Every record, not most, because a missing field is a record I can't use later.
