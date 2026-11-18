@@ -734,6 +734,10 @@ Out of scope:
 
 Stretch: I'm adding a latency breakdown, timing each stage of one `/submit` request (validation, model signal, style signal, scoring, audit write) to see where the time goes.
 
+**Running It**
+
+Path B: local, with logs. Torch plus the GPT-2 weights need more than the 512 MB a free host gives, so this runs on my machine under gunicorn (`gunicorn app:app --bind 127.0.0.1:5000 --workers 1`). The setup, start command, how to force an outage, and what the clean-clone test found are in [RUNNING.md](RUNNING.md), under "Capstone (unit 9)".
+
 **Instrumentation**
 
 Every `/submit` writes one JSON line to `logs/audit.jsonl`, a file I can read back, not console output. Each line has the timestamp, what came in (`text_chars` and the first 80 characters as `text_preview`), what came out (`guess`, all three scores and the `label`), and `duration_ms` for the whole request. This unit I added `duration_ms`, the input fields, `stages_ms` (validate, model, style, score) on decisions, and a new `status: "unavailable"` record for model outages. Failures leave a trace too: bad input is logged as `rejected`, and an outage is logged as `unavailable` with the error. The audit write can't time itself inside its own record, so that one number is printed to the server console as `[timing] <content_id> audit_write_ms=...`. It was 0.3 to 0.7 ms every time I looked.
@@ -775,3 +779,59 @@ There is no API spend and no tokens: GPT-2 runs on my own CPU, so the real cost 
 How I measured it: `measure_cost.py` sends 11 requests to `/submit` with the same 197-character text, against `gunicorn app:app --workers 1` started fresh with `AI201_RATE_LIMITS=0` (otherwise request 7 is a 429). Run 0 is the cold start and is reported on its own. Runs 1 to 10 are averaged. Server time is the `duration_ms` the app logged for each request. Client time is `time.perf_counter()` around the `requests.post` call. The output is saved in `results/capstone_cost_m3.txt`, and all 11 records are in the audit log above.
 
 What the numbers say: the GPT-2 call is about 99% of every request (run 4: `model_ms` 41.9 of 42.2), and everything else together is under 1 ms. The cold start is the expensive part and it moves around: I saw 4.5 s, 8.7 s and 9.4 s on three different starts, so I'd call it 4 to 10 seconds, not one number. A model outage also has a cost: each outage request took about 3 s before the 503 (`duration_ms` 3052.8), because the app tries to load the model again on every request.
+
+**Run Log and Verdicts**
+
+Produced by `run_capstone.py::main`: the outage trials come from `outage_trial` (criteria 1 to 3) and the normal trials from `normal_trial` (criteria 4 and 5). Every trial starts a fresh `gunicorn app:app --workers 1` with rate limiting off, so each run is a real re-run, not a cached answer. Full output: `results/capstone_run_before_2026-11-17_2201.md`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Outage gets a clear 503, never a 500 | 5 of 5, 0 500s | 5/5, 0 500s | 5/5, 0 500s | 5/5, 0 500s | MET |
+| 2. Every outage leaves exactly one trace | 5 of 5, 0 decided | 5/5 records, 0 decided | 5/5 records, 0 decided | 5/5 records, 0 decided | MET |
+| 3. Outage answer comes back fast | median < 1 s, max < 5 s | median 99.0 ms, max 2597.2 ms | median 100.6 ms, max 2216.7 ms | median 100.2 ms, max 2296.7 ms | MET |
+| 4. Guard didn't change normal decisions | all identical to Unit 8 | 15/15 identical | 15/15 identical | 15/15 identical | MET |
+| 5. Latency breakdown adds up | 100%, gap <= 1 ms | 15/15, max gap 0.1 ms | 15/15, max gap 0.1 ms | 15/15, max gap 0.1 ms | MET |
+
+Real output from that run:
+
+Criterion 1, one of the five outage responses from trial 1 (`outage_trial`). All 15 across the three trials were identical:
+
+```json
+{
+  "status": 503,
+  "error": "detector_unavailable",
+  "message": "The AI-writing check is temporarily unavailable, so nothing was decided about your post. Please try again later."
+}
+```
+
+Criterion 2, the log record that same request wrote (`outage_trial` reads it back from `logs/audit.jsonl`):
+
+```
+{"timestamp": "2026-11-18T06:01:10+00:00", "content_id": "82a95753-77e3-41ac-8be4-fc4a46dd44e4", "creator_id": "cap-outage-t1-1", "guess": null, "model_score": null, "style_score": null, "combined_score": null, "label": null, "status": "unavailable", "event": "detector_unavailable", "error": "Couldn't load 'does-not-exist': does-not-exist is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'", "duration_ms": 2597.2, "text_chars": 197, "text_preview": "The committee reviewed the proposal over several weeks and raised concerns about"}
+```
+
+Criterion 3, every outage `duration_ms`, in order, per trial:
+
+- trial 1: [2597.2, 95.3, 90.4, 99.0, 106.5]
+- trial 2: [2216.7, 100.6, 99.3, 106.5, 91.2]
+- trial 3: [2296.7, 100.2, 94.0, 104.8, 91.4]
+
+Criterion 4, the differences from the Unit 8 after-run (`normal_trial` compares all 15 scored inputs to `results/run_2026-11-10_2222_after.md`). One empty list per trial:
+
+```json
+[[], [], []]
+```
+
+Criterion 5, the first decision record from trial 1 (`normal_trial`). Its four stages add up to within 0.1 ms of `duration_ms`:
+
+```
+{"timestamp": "2026-11-18T06:01:15+00:00", "content_id": "a7090587-312f-4b11-b74f-e7d333d8ac49", "creator_id": "eval_c1 my writin_1", "guess": "unsure", "model_score": 0.8034, "style_score": 0.4791, "combined_score": 0.6412, "label": "Our automated check couldn't tell whether this was written by a person or with AI help. Nothing changes: your post stays up as normal. This isn't a judgment about you or your work. If you think we got this wrong, you can tell us why and a person will review it.", "status": "decided", "duration_ms": 4172.6, "stages_ms": {"validate_ms": 0.1, "model_ms": 4171.9, "style_ms": 0.5, "score_ms": 0.0}, "text_chars": 255, "text_preview": "Prayer is one of the 5 pillars of Islam. It is an obligatory ritual that every m"}
+```
+
+All five MET, 3 of 3 trials each. I don't think that means all five targets were hard. My honest read:
+
+- Criteria 1 and 2 test code that either runs or doesn't. Once the `except DetectorUnavailable` branch was in, there was no way for it to come out 4 of 5. They show the guard is there and leaves a trace, but they were never going to be close.
+- Criterion 4 being exact (15 of 15 to 4 decimals) is a real check, because one changed line in `submit()` could have shifted a score. It held because the model and style signals are deterministic on the same text.
+- Criterion 3 was set too loose, and the numbers show why. I wrote it thinking every outage request took about 3 seconds, because that's what I saw in Milestone 2. That was a first request. The real pattern is one slow request per server start (2.2 to 2.6 s), then about 100 ms for every request after it. A median hides the slow one, and a 5-second max lets it through.
+
+Where the outage time actually goes (stage: `detector._load()`). The first time `_load()` runs it imports torch and transformers, then asks Hugging Face for the model. The imports are most of that first request: they took 3.8 s when I timed them alone in a fresh Python, while the whole first request inside the server was 2.2 to 2.6 s, so the import time moves around with what the disk has cached, and the lookup is the small part. When that fails, `_load()` raises `DetectorUnavailable` but doesn't remember that it failed, so the next request calls `from_pretrained` again and makes another network lookup. I timed those lookups at 225 ms, then 96 ms, then 92 ms. So during an outage, every request spends about 95 ms re-asking Hugging Face for a model it already knows isn't there, and the one worker can't serve anyone else during that time.
