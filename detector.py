@@ -42,11 +42,18 @@ for yourself where it lands.
 """
 
 import math
+import time
 
 import config
 
 _model = None
 _tokenizer = None
+_last_failure = None  # (time.monotonic(), message) from the most recent failed load
+
+# Capstone improvement: after a failed load, answer from memory for this long
+# before trying again. Without it, every request during an outage re-asks
+# Hugging Face for a model that isn't there (about 95 ms each, measured).
+RETRY_AFTER_SECONDS = 30
 
 
 class DetectorUnavailable(RuntimeError):
@@ -55,30 +62,36 @@ class DetectorUnavailable(RuntimeError):
 
 def _load():
     """Load the model once and keep it. First call downloads ~550 MB."""
-    global _model, _tokenizer
+    global _model, _tokenizer, _last_failure
     if _model is not None:
         return _model, _tokenizer
+
+    if _last_failure is not None:
+        failed_at, message = _last_failure
+        if time.monotonic() - failed_at < RETRY_AFTER_SECONDS:
+            raise DetectorUnavailable(message)
 
     try:
         import torch  # noqa: F401
         from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError as exc:
-        raise DetectorUnavailable(
-            f"transformers or torch isn't installed ({exc}).\n"
-            f"Run: pip install -r requirements.txt"
-        ) from exc
+        message = (f"transformers or torch isn't installed ({exc}).\n"
+        f"Run: pip install -r requirements.txt")
+        _last_failure = (time.monotonic(), message)
+        raise DetectorUnavailable(message) from exc
 
     try:
         _tokenizer = AutoTokenizer.from_pretrained(config.DETECTOR_MODEL)
         _model = AutoModelForCausalLM.from_pretrained(config.DETECTOR_MODEL)
         _model.eval()
     except Exception as exc:  # noqa: BLE001
-        raise DetectorUnavailable(
-            f"Couldn't load '{config.DETECTOR_MODEL}': {exc}\n"
-            f"The first run downloads about 550 MB — check your connection and "
-            f"that you have disk space free."
-        ) from exc
+        message = (f"Couldn't load '{config.DETECTOR_MODEL}': {exc}\n"
+                    f"The first run downloads about 550 MB — check your connection and "
+                    f"that you have disk space free.")
+        _last_failure = (time.monotonic(), message)
+        raise DetectorUnavailable(message) from exc
 
+    _last_failure = None
     return _model, _tokenizer
 
 
