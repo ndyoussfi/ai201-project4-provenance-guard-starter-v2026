@@ -306,3 +306,64 @@ is evidence, and the entries you paste into your README are what unit 8 grades.
 
 **Do not delete and recreate this repository.** You submit the same URL both
 units.
+
+---
+
+## Capstone (unit 9): running it locally with logs (Path B)
+
+This project can't run on a free host (see "This project will not fit a free host" above), so the capstone runs locally under gunicorn and everything it does goes to `logs/audit.jsonl`.
+
+**What the machine needs**
+- Python 3.11, 3.12 or 3.13 (not 3.14). I used 3.11.4.
+- About 1.2 GB of free disk: torch is about 570 MB in the venv, and the GPT-2 model is about 525 MB in `~/.cache/huggingface`.
+- Internet the first time only, to download the model.
+
+**Setup, from a fresh clone**
+```bash
+git clone https://github.com/ndyoussfi/ai201-project4-provenance-guard-starter-v2026.git
+cd ai201-project4-provenance-guard-starter-v2026
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python detector.py
+```
+`python detector.py` downloads and loads the model once, so the first real request isn't slow.
+
+**Start it**
+```bash
+gunicorn app:app --bind 127.0.0.1:5000 --workers 1
+```
+One worker on purpose: each worker loads its own copy of GPT-2, and the rate limiter keeps its counts in memory per worker.
+
+**Check it's working**
+```bash
+curl -s -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json" -d '{"text": "The committee reviewed the proposal over several weeks and raised concerns about the budget. After a long discussion they agreed to fund a smaller pilot first and revisit the full plan next spring.", "creator_id": "readme-check"}'
+tail -1 logs/audit.jsonl
+```
+You should get a JSON result with `guess`, and a new log line with `duration_ms` and `stages_ms`.
+
+**Simulate a model outage (the capstone extension)**
+```bash
+AI201_DETECTOR_MODEL=does-not-exist gunicorn app:app --bind 127.0.0.1:5000 --workers 1
+```
+The same curl now returns a 503 with `"error": "detector_unavailable"`, and the log gets a record with
+`"status": "unavailable"`.
+
+**Settings used in the capstone tests**
+
+| Variable | Default | Why I change it |
+|---|---|---|
+| `AI201_DETECTOR_MODEL` | `gpt2` | Set to a name that doesn't exist to force an outage |
+| `AI201_RATE_LIMITS` | `1` (6 per minute) | Set to `0` for the 10-run cost measurement, so request 7 isn't a 429 |
+
+**Reading the logs**
+
+Every `/submit` writes one JSON line to `logs/audit.jsonl`: decisions (`status: decided`), bad input
+(`rejected`), and model outages (`unavailable`). Each one has `timestamp`, the input (`text_chars`,
+`text_preview`), the output (`guess`, the scores, the `label`), and `duration_ms`. Decisions also have
+`stages_ms`. The time for the audit write itself is printed to the server console as `[timing]
+<content_id> audit_write_ms=...`, since a record can't hold its own write time.
+
+**What the clean-clone test found**
+
+I cloned the repo into a new folder and followed this file exactly. It worked end to end (same scores as my main copy), but `pip install` pulled NumPy 2.4.6, and torch 2.2.2 (the last Intel Mac build) was compiled against NumPy 1.x, so every start printed a "may crash" traceback. My original venv had NumPy 1.26.4 by luck. I pinned `numpy<2` in `requirements.txt`, re-installed in the clone, and the warning went away with identical scores. The GPT-2 model didn't re-download because `~/.cache/huggingface` is shared across folders on my machine, so a truly new machine would also download about 525 MB on the first `python detector.py`.
